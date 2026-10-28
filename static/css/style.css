@@ -137,6 +137,9 @@ body {
 .publication-authors { margin-top: 22px; font-size: 1.15rem; line-height: 1.7; }
 .publication-authors a { color: var(--link); }
 .publication-authors a:hover { text-decoration: underline; }
+.publication-affiliation { margin-top: 6px; font-size: 0.95rem; color: var(--text-muted); }
+.publication-affiliation a { color: var(--link); }
+.publication-affiliation a:hover { text-decoration: underline; }
 .author-block { display: inline-block; margin: 0 6px; }
 
 .publication-links {
