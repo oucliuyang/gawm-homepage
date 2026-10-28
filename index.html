@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="GAWM: A Compact Latent World-Action Model for Multi-Task Robot Manipulation">
+  <meta name="keywords" content="Compact Models, Imitation Learning, Joint-Embedding Predictive Architectures, Latent World Models, Multi-Task Manipulation, Reactive Policies, World-Action Models, DINOv3, LIBERO, RoboTwin 2.0">
+  <title>GAWM: A Compact Latent World-Action Model for Multi-Task Robot Manipulation</title>
+
+  <meta property="og:title" content="GAWM: A Compact Latent World-Action Model for Multi-Task Robot Manipulation">
+  <meta property="og:description" content="A sub-100M-parameter multi-task world-action model that forecasts frozen DINOv3 tokens and regresses actions from the forecast. It reaches 93.9% / 93.1% on RoboTwin 2.0, above billion-parameter WAMs, at 8.8 ms per action chunk.">
+  <meta property="og:image" content="https://oucliuyang.github.io/gawm-homepage/static/images/overview.png">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans:wght@400;500;600&family=Playfair+Display:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css">
+  <link rel="stylesheet" href="./static/css/style.css">
+
+  <script defer src="./static/js/main.js"></script>
+</head>
+<body>
+<div class="page">
+
+<!-- =====================================================
+     Sticky navigation
+     ===================================================== -->
+<nav class="topnav">
+  <span class="brand">GAWM</span>
+  <a class="nav-link" href="#overview">Overview</a>
+  <a class="nav-link" href="#method">Method</a>
+  <a class="nav-link" href="#results">Results</a>
+  <a class="nav-link" href="#analysis">Analysis</a>
+  <a class="nav-link" href="#real-robot">Real Robot</a>
+  <a class="nav-link" href="#conclusion">Conclusion</a>
+  <a class="nav-link" href="#citation">Citation</a>
+</nav>
+
+
+<!-- =====================================================
+     Title / Authors / Links / Key numbers
+     ===================================================== -->
+<header class="hero-block">
+  <div class="wrap">
+    <h1 class="publication-title">
+      GAWM
+      <span class="subtitle-line">A Compact Latent World-Action Model for Multi-Task Robot Manipulation</span>
+    </h1>
+
+    <div class="publication-venue">IEEE Robotics and Automation Letters (RA-L) &middot; under review</div>
+
+    <div class="publication-authors">
+      <span class="author-block">Yang Liu,</span>
+      <span class="author-block">Xiaoli Liu,</span>
+      <span class="author-block">Liuzhao Li,</span>
+      <span class="author-block">Yuduo Song,</span>
+      <span class="author-block">Muyuan Liu,</span>
+      <span class="author-block">Xiang Gao</span>
+    </div>
+
+    <!-- Link buttons: fill href and remove aria-disabled when available -->
+    <div class="publication-links">
+      <a href="https://arxiv.org/abs/2610.37091" target="_blank" rel="noopener" class="external-link button is-small is-rounded is-dark">
+        <span class="icon"><i class="ai ai-arxiv"></i></span><span>arXiv</span>
+      </a>
+      <a href="https://github.com/gaoxiang12/ga-wm" target="_blank" rel="noopener" class="external-link button is-small is-rounded is-dark">
+        <span class="icon"><i class="fab fa-github"></i></span><span>Code</span>
+      </a>
+      <a href="https://huggingface.co/oucliuyang/GAWM-S-LIBERO/tree/main" target="_blank" rel="noopener" class="external-link button is-small is-rounded is-dark">
+        <span class="icon"><img src="https://huggingface.co/front/assets/huggingface_logo-noborder.svg" alt="Hugging Face"></span><span>Checkpoint (LIBERO)</span>
+      </a>
+      <a href="https://huggingface.co/oucliuyang/GAWM-S-RoboTwin2/tree/main" target="_blank" rel="noopener" class="external-link button is-small is-rounded is-dark">
+        <span class="icon"><img src="https://huggingface.co/front/assets/huggingface_logo-noborder.svg" alt="Hugging Face"></span><span>Checkpoint (RoboTwin 2.0)</span>
+      </a>
+    </div>
+
+    <div class="grid c4 hero-summary">
+      <div class="stat"><div class="num">&lt;100M</div><div class="lbl">parameters in total<br>no VLM or video generator</div></div>
+      <div class="stat"><div class="num">93.9 / 93.1</div><div class="lbl">RoboTwin 2.0 success (%)<br>clean / randomized, 77M</div></div>
+      <div class="stat"><div class="num">95.6%</div><div class="lbl">LIBERO success<br>with 38M parameters</div></div>
+      <div class="stat"><div class="num">8.8 ms</div><div class="lbl">per action chunk on RoboTwin 2.0<br>lowest of all compared methods</div></div>
+    </div>
+  </div>
+</header>
+
+
+<!-- =====================================================
+     01 Overview: abstract + demo
+     ===================================================== -->
+<section class="block" id="overview">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="num">01</span><h2>Abstract</h2><span class="eyebrow">Overview</span>
+    </div>
+    <div class="text">
+      <p>
+        World-action models (WAMs) incorporate the prediction of future observations into robot policy learning.
+        However, most WAMs build on <b>billion-parameter</b> vision-language or video-generation backbones, which
+        incur high training cost and inference latency.
+        In this letter, we present <span class="hl">GAWM</span> (Geometry-Aware World Model), a
+        <span class="hl">compact multi-task WAM</span> that predicts future observations in the latent space of a
+        frozen <b>DINOv3</b> encoder. GAWM compresses the features of each camera view into a small set of tokens.
+        A lightweight predictor, <b>conditioned on the task rather than on actions</b>, forecasts these tokens at
+        two future horizons. The forecast is supervised with the <b>dense patch features of future frames</b>,
+        which requires it to encode the spatial layout of the future scene. An action decoder directly regresses a
+        chunk of future actions from the current and predicted tokens.
+        With <b>fewer than 100M parameters</b> and no robot or video pretraining, GAWM
+        <span class="hl">outperforms billion-parameter WAMs on RoboTwin 2.0</span> and performs comparably to
+        billion-parameter VLAs on <b>LIBERO</b>. On a dual-arm robot, it achieves lower action-prediction error on
+        held-out demonstrations than a fine-tuned billion-parameter VLA, with substantially lower inference latency.
+        Ablation studies show that the latent world model substantially improves performance when training data or
+        training time is limited.
+      </p>
+    </div>
+
+    <div class="teaser mt">
+      <video controls muted loop playsinline preload="metadata" poster="./static/images/real_poster.jpg">
+        <source src="./static/videos/real_bottle_on_shelf.mp4" type="video/mp4">
+      </video>
+      <div class="phases">
+        <button class="phase active" data-t="0"><img src="./static/images/real_kf1.jpg" alt="Start"><span class="lbl"><span class="n">1</span>start</span></button>
+        <button class="phase" data-t="8"><img src="./static/images/real_kf2.jpg" alt="Grasp with the left arm"><span class="lbl"><span class="n">2</span>grasp (left arm)</span></button>
+        <button class="phase" data-t="13"><img src="./static/images/real_kf3.jpg" alt="Handover"><span class="lbl"><span class="n">3</span>handover</span></button>
+        <button class="phase" data-t="18"><img src="./static/images/real_kf4.jpg" alt="Place with the right arm"><span class="lbl"><span class="n">4</span>place (right arm)</span></button>
+      </div>
+    </div>
+    <p class="caption">
+      <b>Real-robot task &middot; green bottle.</b> Head-camera views (top) and wrist-camera views (bottom) of a
+      demonstration. Click a key frame to jump to that phase. Details in <a href="#real-robot">Sec. 05</a>.
+    </p>
+  </div>
+</section>
+
+
+<!-- =====================================================
+     02 Method
+     ===================================================== -->
+<section class="block" id="method">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="num">02</span><h2>Task-Conditioned Latent Foresight</h2><span class="eyebrow">Method</span>
+    </div>
+    <div class="figure">
+      <img src="./static/images/overview.svg" alt="GAWM overview">
+      <p class="caption">
+        <b>Overview of GAWM.</b> A frozen DINOv3 encoder and a query adapter encode each camera view into 64 visual
+        tokens. The latent predictor, conditioned on the task code, forecasts these tokens at two future horizons, and
+        the action decoder directly regresses a chunk of future actions from the current tokens, the forecast, the
+        robot state and the task code. Dashed panel: training only; a patch decoder maps the forecast to the encoder's
+        patch features of the recorded future frames.
+      </p>
+    </div>
+
+    <div class="grid c4 mt">
+      <div class="info-card">
+        <h4><span class="ic"><i class="fas fa-snowflake"></i></span>Frozen tokens</h4>
+        <p>Three DINOv3 ViT-S/16 layers are fused into 64 tokens per view. The task code comes from demonstrations, so
+          no language model is needed.</p>
+      </div>
+      <div class="info-card">
+        <h4><span class="ic"><i class="fas fa-forward"></i></span>Action-free predictor</h4>
+        <p>A 4&ndash;6M-parameter predictor forecasts the tokens at the chunk's midpoint and end in parallel, without
+          actions or search.</p>
+      </div>
+      <div class="info-card">
+        <h4><span class="ic"><i class="fas fa-border-all"></i></span>Dense supervision</h4>
+        <p>The forecast is matched to the frozen encoder's patch features of future frames, so it must encode
+          <b>where</b> the gripper and objects will be. A frozen target cannot collapse.</p>
+      </div>
+      <div class="info-card">
+        <h4><span class="ic"><i class="fas fa-bolt"></i></span>One-pass decoding</h4>
+        <p>An ACT-style decoder regresses the whole chunk with an &#8467;<sub>1</sub> loss. No iterative sampling at
+          inference.</p>
+      </div>
+    </div>
+
+    <details class="more">
+      <summary>Implementation details</summary>
+      <div class="table-wrap">
+        <table class="table is-hoverable result-table">
+          <thead>
+            <tr><th>Setting</th><th class="vsep">LIBERO</th><th class="vsep">RoboTwin 2.0</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Parameters at inference</td><td class="vsep">38M</td><td class="vsep">77M</td></tr>
+            <tr><td>Adapter / predictor / decoder</td><td class="vsep">2 layers (w 384) / 2 blocks / 2 layers</td><td class="vsep">4 layers (w 768) / 4 blocks / 3 layers</td></tr>
+            <tr><td>Actions</td><td class="vsep">6-D end-effector deltas + gripper</td><td class="vsep">14-D absolute joint targets (16-D end-effector state)</td></tr>
+            <tr><td>Chunk <i>H</i>, horizons (<i>h</i><sub>1</sub>, <i>h</i><sub>2</sub>)</td><td class="vsep">8, (4, 8)</td><td class="vsep">32, (16, 32); first 16 steps executed</td></tr>
+            <tr><td>Training</td><td class="vsep">80k steps, batch 160, 8 GPUs</td><td class="vsep">765k steps, batch 128, 32 GPUs, + 9.6k-step task-code fine-tuning</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">
+        Frozen DINOv3 ViT-S/16 (layers 7, 9, 11; 21.6M). AdamW, learning rate 2&times;10<sup>&minus;4</sup>,
+        two-phase cosine schedule; &lambda;<sub>fut</sub>=1, &lambda;<sub>cur</sub>=0.1, &lambda;<sub>reg</sub>=0.02,
+        &lambda;<sub>tmp</sub>=0 (LIBERO) / 0.1 (RoboTwin 2.0). The predictor has 4.0M / 6.0M parameters; the
+        5.1M-parameter patch decoder is used only in training and is not counted.
+      </p>
+    </details>
+  </div>
+</section>
+
+
+<!-- =====================================================
+     03 Results
+     ===================================================== -->
+<section class="block" id="results">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="num">03</span><h2>Small Model, Large-Model Performance</h2><span class="eyebrow">Benchmarks</span>
+    </div>
+    <div class="figure">
+      <img src="./static/images/scaling.svg" alt="Success rate versus model size">
+      <p class="caption">
+        <b>Success rate versus parameters at inference</b> on LIBERO (left; GAWM-S with additional in-domain data) and
+        on the clean (middle) and randomized (right) settings of RoboTwin 2.0. Bottom: methods ranked by success rate.
+        On RoboTwin 2.0, GAWM-S is the smallest and best-performing of the plotted methods.
+      </p>
+    </div>
+
+    <details class="more">
+      <summary>Full comparison table (Table I)</summary>
+      <div class="table-wrap">
+        <table class="table is-hoverable result-table">
+          <thead>
+            <tr>
+              <th rowspan="2">Method</th><th rowspan="2">Params</th><th rowspan="2">Robot PT</th><th rowspan="2">Task</th>
+              <th colspan="5" class="vsep">LIBERO</th><th colspan="2" class="vsep">RoboTwin 2.0</th>
+            </tr>
+            <tr>
+              <th class="vsep">Spatial</th><th>Object</th><th>Goal</th><th>Long</th><th>Avg.</th>
+              <th class="vsep">Clean</th><th>Rand.</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="11" class="section-row">Vision-language-action models</td></tr>
+            <tr><td>OpenVLA</td><td>7.5B<sup>*</sup></td><td>&#10003;</td><td>Lang.</td><td class="vsep">84.7</td><td>88.4</td><td>79.2</td><td>53.7</td><td>76.5</td><td class="vsep">–</td><td>–</td></tr>
+            <tr><td>&pi;<sub>0</sub></td><td>3.2B<sup>*</sup></td><td>&#10003;</td><td>Lang.</td><td class="vsep">96.8</td><td>98.8</td><td>95.8</td><td>85.2</td><td>94.2</td><td class="vsep">–</td><td>–</td></tr>
+            <tr><td>&pi;<sub>0.5</sub></td><td>3.4B</td><td>&#10003;</td><td>Lang.</td><td class="vsep second">98.8</td><td>98.2</td><td>98.0</td><td>92.4</td><td>96.9</td><td class="vsep">82.74<sup>a</sup></td><td>76.76<sup>a</sup></td></tr>
+            <tr><td>OpenVLA-OFT</td><td>7.6B</td><td>&#10003;</td><td>Lang.</td><td class="vsep">97.7</td><td>98.0</td><td>96.1</td><td>95.3</td><td>96.8</td><td class="vsep">–</td><td>–</td></tr>
+            <tr><td>VLA-Adapter</td><td>1.5B</td><td>&#10007;</td><td>Lang.</td><td class="vsep">97.8</td><td>99.2</td><td>97.2</td><td>95.0</td><td>97.3</td><td class="vsep">–</td><td>–</td></tr>
+            <tr><td>StarVLA Qwen3-OFT</td><td>4.5B</td><td>n/s</td><td>Lang.</td><td class="vsep">97.8</td><td>98.6</td><td>96.2</td><td>93.8</td><td>96.6</td><td class="vsep">88.18</td><td>88.32</td></tr>
+            <tr><td>VLAct-PI</td><td>&asymp;4B<sup>*</sup></td><td>&#10003;</td><td>Lang.</td><td class="vsep">–</td><td>–</td><td>–</td><td>–</td><td>–</td><td class="vsep second">93.0</td><td>88.8</td></tr>
+            <tr><td colspan="11" class="section-row">World-action models</td></tr>
+            <tr><td>Fast-WAM</td><td>11.9B</td><td>&#10007;<sup>b</sup></td><td>Lang.</td><td class="vsep">98.2</td><td class="best">100.0</td><td>97.0</td><td>95.2</td><td>97.6</td><td class="vsep">91.88</td><td class="second">91.78</td></tr>
+            <tr><td>LingBot-VA</td><td>10.9B</td><td>&#10003;</td><td>Lang.</td><td class="vsep">98.5</td><td class="second">99.6</td><td>97.2</td><td class="best">98.5</td><td class="second">98.5</td><td class="vsep">92.93</td><td>91.55</td></tr>
+            <tr><td>LaWAM</td><td>2.1B</td><td>&#10003;</td><td>Lang.</td><td class="vsep best">99.4</td><td class="second">99.6</td><td class="best">98.4</td><td>97.0</td><td class="best">98.6</td><td class="vsep">92.64</td><td>89.80</td></tr>
+            <tr><td>Motus</td><td>13.9B</td><td>&#10003;</td><td>Lang.</td><td class="vsep">–</td><td>–</td><td>–</td><td>–</td><td>–</td><td class="vsep">88.66</td><td>87.02</td></tr>
+            <tr><td colspan="11" class="section-row">Compact policies (&lt;1B)</td></tr>
+            <tr><td>Octo-Base</td><td>93M<sup>*</sup></td><td>&#10003;</td><td>Lang.</td><td class="vsep">78.9</td><td>85.7</td><td>84.6</td><td>51.1</td><td>75.1</td><td class="vsep">–</td><td>–</td></tr>
+            <tr><td>SmolVLA</td><td>0.40B</td><td>&#10007;</td><td>Lang.</td><td class="vsep">90.0</td><td>96.0</td><td>92.0</td><td>71.0</td><td>87.3<sup>c</sup></td><td class="vsep">–</td><td>–</td></tr>
+            <tr><td>Evo-1</td><td>0.78B</td><td>&#10007;</td><td>Lang.</td><td class="vsep">92.7</td><td>97.7</td><td>96.3</td><td>92.3</td><td>94.8<sup>c</sup></td><td class="vsep">–</td><td>–</td></tr>
+            <tr><td>X-VLA</td><td>0.88B</td><td>&#10003;</td><td>Lang.</td><td class="vsep">98.2</td><td>98.6</td><td>97.8</td><td class="second">97.6</td><td>98.1</td><td class="vsep">72.80<sup>a</sup></td><td>72.84<sup>a</sup></td></tr>
+            <tr><td>TurboVLA<sup>d</sup></td><td>0.2<sup>*</sup>/0.43B</td><td>&#10007;</td><td>Lang.</td><td class="vsep">97.0</td><td class="best">100.0</td><td class="second">98.2</td><td>95.2</td><td>97.6</td><td class="vsep">88.02</td><td>88.10</td></tr>
+            <tr><td>LiLa-WAM<sup>e</sup></td><td>0.48B</td><td>&#10007;</td><td>ID</td><td class="vsep">98.0</td><td>98.8</td><td>97.2</td><td>94.2</td><td>97.1</td><td class="vsep">90.48<sup>c</sup></td><td>89.04<sup>c</sup></td></tr>
+            <tr class="ours"><td>GAWM-S<sup>&dagger;f</sup> (ours)</td><td>38/77M</td><td>&#10007;</td><td>ID</td><td class="vsep">96.2</td><td>99.8</td><td>95.0</td><td>91.2</td><td>95.6</td><td class="vsep best">93.94</td><td class="best">93.10</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">
+        Success rates (%). Params: parameters of the modules that compute an action chunk from the observation and
+        the instruction, including frozen image, text and VAE encoders; modules used only in training or only for
+        outputs the actions do not depend on are excluded. Robot PT: pretraining on robot data or embodied
+        videos. Task: language instruction (Lang.) or task identifier (ID). RoboTwin 2.0: mixed protocol. Bold: best;
+        underlined: second best (LIBERO columns exclude the &dagger; row). –: not reported; n/s: not stated.
+        <sup>*</sup> Reported by the authors or by TurboVLA; not recounted. <sup>a</sup> Reproduced by LingBot-VLA (&pi;<sub>0.5</sub>) and Motus
+        (X-VLA). <sup>b</sup> Initialized from a pretrained video generator. <sup>c</sup> Fewer evaluation episodes.
+        <sup>d</sup> 0.2B on LIBERO, 0.43B on RoboTwin 2.0 (three cameras, unseen instructions). <sup>e</sup> One policy
+        per LIBERO suite; one third-person camera on RoboTwin 2.0. <sup>f</sup> 38M on LIBERO, 77M on RoboTwin 2.0.
+        <sup>&dagger;</sup> Trained on the Extended LIBERO data.
+      </p>
+    </details>
+
+    <h3 class="sub-head">The lowest inference latency of all compared methods</h3>
+    <div class="figure" style="max-width: 760px; margin-left: auto; margin-right: auto;">
+      <img src="./static/images/latency.svg" alt="Inference latency per action-chunk query">
+      <p class="caption">
+        <b>Inference latency per action-chunk query.</b> Official implementations on the same GPU (NVIDIA RTX PRO
+        5000), batch size 1, default precision and denoising steps; median of 200 queries, from preprocessed inputs to
+        the action chunk. GAWM-S takes 8.8 ms on RoboTwin 2.0 and 7.1 ms on LIBERO, compared with 17.6&ndash;143.5 ms
+        for the other compact policies, 41.2&ndash;68.2 ms for the VLAs and 114&ndash;3,763 ms for the WAMs.
+        &dagger;: LIBERO configuration; all others use RoboTwin 2.0.
+      </p>
+    </div>
+
+    <h3 class="sub-head">A small model is enough</h3>
+    <div class="grid c3">
+      <div class="kpi"><div class="v">93.78 / 93.42</div><div class="k">RoboTwin 2.0 with a ViT-L encoder, vs. 94.36 / 93.48 for the 765k-step ViT-S model</div></div>
+      <div class="kpi"><div class="v">38M / 77M</div><div class="k">parameters at inference on LIBERO / RoboTwin 2.0, the smallest in Table I (other compact policies: 93M&ndash;0.88B)</div></div>
+      <div class="kpi"><div class="v">45 / 1,749</div><div class="k">GPU-hours to train on LIBERO / RoboTwin 2.0 (ViT-L: 2,903)</div></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- =====================================================
+     04 Ablation and analysis
+     ===================================================== -->
+<section class="block" id="analysis">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="num">04</span><h2>What Does the World Model Contribute?</h2><span class="eyebrow">Ablation &middot; Analysis</span>
+    </div>
+
+    <h3 class="sub-head" style="margin-top: 0;">The world model matters most when data or training time is limited</h3>
+    <div class="table-wrap">
+      <table class="table is-hoverable result-table">
+        <thead>
+          <tr>
+            <th rowspan="2">Variant</th><th colspan="5" class="vsep">LIBERO, &frac14; data</th>
+            <th rowspan="2" class="vsep">LIBERO Ext.</th><th rowspan="2" class="vsep">RoboTwin 191k steps</th>
+          </tr>
+          <tr><th class="vsep">Spatial</th><th>Object</th><th>Goal</th><th>Long</th><th>Avg.</th></tr>
+        </thead>
+        <tbody>
+          <tr class="ours"><td>GAWM-S</td><td class="vsep best">90.2</td><td>85.4</td><td class="best">87.8</td><td class="best">58.4</td><td class="best">80.5</td><td class="vsep best">95.6</td><td class="vsep best">90.7</td></tr>
+          <tr><td>w/o world model</td><td class="vsep">77.2</td><td class="best">89.0</td><td>80.2</td><td>37.4</td><td>71.0</td><td class="vsep">93.1</td><td class="vsep">18.8</td></tr>
+          <tr><td>&Delta; (95% CI)</td><td class="vsep">+13.0</td><td>&minus;3.6</td><td>+7.6</td><td>+21.0</td><td><b>+9.5</b> [5.2, 14.2]</td><td class="vsep">+2.5 [&minus;0.8, 6.1]</td><td class="vsep"><b>+71.9</b> [65.2, 78.0]</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">
+      Success rates (%). Without the world model, GAWM reduces to an ACT-style policy on the same frozen features.
+      The gain grows as data or training time become scarce; with the short RoboTwin schedule GAWM-S wins on all 50
+      tasks. &Delta;: paired per-task difference with bootstrap 95% CI.
+    </p>
+
+    <h3 class="sub-head">The forecast encodes the future spatial layout</h3>
+    <div class="figure">
+      <img src="./static/images/forecast.svg" alt="Decoded forecasts">
+      <p class="caption">
+        <b>Decoded forecasts</b> on RoboTwin 2.0. Right: PCA of the true future patch features (True) and of the
+        decoded forecast (Pred.), with cosine similarity to True for the forecast and for frame <i>t</i>.
+      </p>
+    </div>
+    <div class="grid c3 mt">
+      <div class="kpi"><div class="v">0.970<small>vs. 0.929</small></div><div class="k">cosine to the true future at +16 frames (forecast vs. current frame)</div></div>
+      <div class="kpi"><div class="v">0.967<small>vs. 0.892</small></div><div class="k">cosine to the true future at +32 frames (forecast vs. current frame)</div></div>
+      <div class="kpi"><div class="v">75% / 91%</div><div class="k">of 1,000 anchors where the forecast is closer to the future than the current frame</div></div>
+    </div>
+
+    <h3 class="sub-head">The action decoder reads the forecast in temporal order</h3>
+    <div class="text">
+      <p>
+        Each action step attends most to the tokens <b>closest to it in time</b>: early steps to the current tokens,
+        middle steps to the near forecast, late steps to the far forecast. The share of the far forecast rises from
+        <b>20% to 44%</b> over the chunk, and this progression holds for all 1,000 anchors. The adapter attention
+        peaks on the gripper fingers and the manipulated objects.
+      </p>
+    </div>
+    <div class="figure mt" style="max-width: 620px; margin-left: auto; margin-right: auto;">
+      <img src="./static/images/attention.svg" alt="Attention of GAWM-S on RoboTwin 2.0">
+      <p class="caption">
+        Top: adapter attention over the patches. Bottom: decoder attention share per memory group and action step.
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- =====================================================
+     05 Real-robot evaluation
+     ===================================================== -->
+<section class="block" id="real-robot">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="num">05</span><h2>Real-Robot Evaluation</h2><span class="eyebrow">Real World</span>
+    </div>
+    <div class="text">
+      <p>
+        On a dual-arm <b>Tianji Marvin Pro</b>, the left arm picks a target bottle from a shelf of five and hands it
+        to the right arm, which places it on the table. The four tasks share the same scene, so the <b>task code is
+        the only cue to the target</b>. GAWM-S uses all three cameras and is fine-tuned from the 765k-step RoboTwin 2.0
+        model; the baseline is &pi;<sub>0.5</sub>, LoRA fine-tuned with language instructions. We compare predicted
+        actions with the recorded ones on held-out demonstrations and run closed-loop trials on the robot.
+      </p>
+    </div>
+    <div class="task-chips">
+      <span><span class="id">T1</span><span class="dot" style="background:#3b82f6"></span>blue bottle</span>
+      <span><span class="id">T2</span><span class="dot" style="background:#facc15"></span>yellow bottle</span>
+      <span><span class="id">T3</span><span class="dot" style="background:#22c55e"></span>green bottle</span>
+      <span><span class="id">T4</span><span class="dot" style="background:#1f2937"></span>black bottle</span>
+      <span><span class="id">Data</span>340 demos at 15 Hz (113k frames): 307 train &middot; 33 validation &middot; 81 test (separate day)</span>
+    </div>
+
+    <div class="grid c75 mt">
+      <div class="pane">
+        <div class="table-wrap">
+          <table class="table is-hoverable result-table">
+            <thead>
+              <tr><th>Metric</th><th class="vsep">GAWM-S</th><th>&pi;<sub>0.5</sub> (40k)</th><th>&pi;<sub>0.5</sub> (60k)</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Joint error, first step (rad) &darr;</td><td class="vsep best">0.072</td><td>0.098</td><td>0.092</td></tr>
+              <tr><td>Joint error, full chunk (rad) &darr;</td><td class="vsep best">0.088<sup>a</sup></td><td>0.106<sup>b</sup></td><td>0.101<sup>b</sup></td></tr>
+              <tr><td>Gripper error, first step &darr;</td><td class="vsep best">0.020</td><td>0.028</td><td>0.023</td></tr>
+              <tr><td>Closed-loop success, yellow bottle &uarr;</td><td class="vsep best">46/50<sup>c</sup></td><td>&ndash;</td><td>39/50</td></tr>
+              <tr><td>Latency, median / 95th pct. (ms) &darr;</td><td class="vsep best">9.3 / 9.6</td><td colspan="2" style="text-align: center;">63.8 / 63.9</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="caption">
+          Errors: mean absolute error on the 81 test demos w.r.t. the recorded joint targets of both arms (rad) and
+          gripper commands. Success: trials in which the bottle is placed on the table (92% [81.2, 96.8] vs. 78%
+          [64.8, 87.2]). Latency: batch size 1 on the same RTX PRO 5000 GPU, measured as in the latency figure.
+          <sup>a</sup> Over 16 steps. <sup>b</sup> Over 20 steps. <sup>c</sup> Fine-tuned for 60k steps.
+        </p>
+      </div>
+      <div class="pane">
+        <div class="figure">
+          <video controls muted loop playsinline preload="metadata" poster="./static/images/real_third_person_poster.jpg">
+            <source src="./static/videos/real_third_person.mp4" type="video/mp4">
+          </video>
+        </div>
+        <p class="caption">Third-person view of the handover task.</p>
+      </div>
+    </div>
+
+    <details class="more">
+      <summary>Per-arm breakdown on the 33 validation demos</summary>
+      <div class="table-wrap">
+        <table class="table is-hoverable result-table">
+          <thead>
+            <tr><th>Metric</th><th class="vsep">GAWM-S</th><th>&pi;<sub>0.5</sub> (40k)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>First inference, excluding model loading (s) &darr;</td><td class="vsep best">0.386</td><td>10.420</td></tr>
+            <tr><td colspan="3" class="section-row">Left arm and gripper</td></tr>
+            <tr><td>Joint MAE, first step / first 5 steps (rad) &darr;</td><td class="vsep best">0.0177 / 0.0196</td><td>0.0221 / 0.0215</td></tr>
+            <tr><td>Joint MAE, common 16-step horizon (rad) &darr;</td><td class="vsep">0.0254</td><td class="best">0.0227</td></tr>
+            <tr><td>Gripper, first-step MAE &darr; / state accuracy (%) &uarr;</td><td class="vsep best">0.0058 / 99.45</td><td>0.0156 / 99.16</td></tr>
+            <tr><td colspan="3" class="section-row">Right arm and gripper</td></tr>
+            <tr><td>Joint MAE, first step / first 5 steps (rad) &darr;</td><td class="vsep best">0.0234 / 0.0269</td><td>0.0324 / 0.0312</td></tr>
+            <tr><td>Joint MAE, common 16-step horizon (rad) &darr;</td><td class="vsep">0.0377</td><td class="best">0.0328</td></tr>
+            <tr><td>Gripper, first-step MAE &darr; / state accuracy (%) &uarr;</td><td class="vsep best">0.0124 / 98.76</td><td>0.0245 / 98.32</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">
+        33 trajectories, 11,039 frames; raw predictions. Gripper accuracy: first-step binary agreement at threshold
+        0.5. Offline errors are not task success rates. This subset was held out for GAWM, whereas the
+        &pi;<sub>0.5</sub> training configuration does not exclude these episodes.
+      </p>
+    </details>
+  </div>
+</section>
+
+
+<!-- =====================================================
+     06 Conclusion
+     ===================================================== -->
+<section class="block" id="conclusion">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="num">06</span><h2>Conclusion</h2><span class="eyebrow">Takeaways</span>
+    </div>
+    <div class="text">
+      <p>
+        On closed task sets, a compact task-conditioned latent predictor can provide a reactive policy with the
+        foresight that existing WAMs obtain from billion-parameter backbones. This foresight encodes the future layout
+        of the scene and substantially improves success when training data or training time is limited.
+        <b>Limitation:</b> GAWM targets a closed task set and does not interpret language; we plan to pair it with a
+        large language model that maps open-ended instructions to the known tasks.
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- =====================================================
+     07 Citation
+     ===================================================== -->
+<section class="block" id="citation">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="num">07</span><h2>Citation</h2><span class="eyebrow">BibTeX</span>
+    </div>
+    <div class="bibtex-wrap">
+      <button id="copy-bibtex" class="button is-small is-rounded copy-btn">
+        <span class="icon"><i class="far fa-copy"></i></span><span class="label">Copy</span>
+      </button>
+      <pre class="bibtex"><code id="bibtex-code">@article{gawm2026,
+  title   = {{GAWM}: A Compact Latent World-Action Model for Multi-Task Robot Manipulation},
+  author  = {Liu, Yang and Liu, Xiaoli and Li, Liuzhao and Song, Yuduo and Liu, Muyuan and Gao, Xiang},
+  journal = {IEEE Robotics and Automation Letters (RA-L)},
+  note    = {Under review},
+  year    = {2026},
+  eprint  = {2610.37091},
+  archivePrefix = {arXiv},
+  url     = {https://arxiv.org/abs/2610.37091}
+}</code></pre>
+    </div>
+  </div>
+</section>
+
+
+<footer class="footer">
+  <div class="content has-text-centered">
+    <p>
+      This page is adapted from the
+      <a href="https://ginwind.github.io/VLA-JEPA/" target="_blank" rel="noopener">VLA-JEPA</a> and
+      <a href="https://nerfies.github.io/" target="_blank" rel="noopener">Nerfies</a> project pages.
+    </p>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>
