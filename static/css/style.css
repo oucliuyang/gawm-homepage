@@ -133,18 +133,8 @@ body {
   .publication-title .subtitle-line { font-size: 20px; }
 }
 
-.publication-venue {
-  display: inline-block;
-  margin-top: 16px;
-  padding: 2px 14px;
-  border-radius: 999px;
-  background: var(--primary-gradient);
-  color: #fff;
-  font-weight: 600;
-  font-size: 13px;
-}
 
-.publication-authors { margin-top: 10px; font-size: 1.1rem; }
+.publication-authors { margin-top: 22px; font-size: 1.15rem; line-height: 1.7; }
 .publication-authors a { color: var(--link); }
 .publication-authors a:hover { text-decoration: underline; }
 .author-block { display: inline-block; margin: 0 6px; }
@@ -154,7 +144,7 @@ body {
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 18px;
 }
 .button.is-dark {
   background: var(--text-primary) !important;
